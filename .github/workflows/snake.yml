@@ -1,33 +1,122 @@
-name: GitHub Snake
-
+name: Generate Snake & Hero
 
 on:
-schedule:
-- cron: '0 0 * * *' # runs daily at midnight UTC — change if needed
-workflow_dispatch: {}
-
+  schedule:
+    - cron: '0 0 * * *'  # daily at midnight UTC
+  workflow_dispatch: {}
 
 jobs:
-generate-snake:
-runs-on: ubuntu-latest
+  generate:
+    runs-on: ubuntu-latest
 
+    steps:
+      - uses: actions/checkout@v4
 
-steps:
-- uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
 
+      - name: Ensure output dir
+        run: mkdir -p output
 
-- name: Generate snake.svg with Platane SNK
-uses: platane/snk@v4
-with:
-background: '10,10,10' # RGB or hex without '#'
-color: '200,10,10' # snake color
-output: 'snake.svg'
+      - name: Generate snake, pacman and hero svgs
+        run: |
+          python3 - <<'PY'
+import math, colorsys
 
+def make_snake_svg(filename, length=14, cx=60, cy=90, spacing=34, r=14):
+    parts = []
+    w = cx + spacing * (length + 2)
+    h = 200
+    parts.append(f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}">')
+    parts.append('<rect width="100%" height="100%" fill="transparent"/>')
+    # gradient-ish colors
+    for i in range(length):
+        t = i / max(1, length-1)
+        # from green to teal
+        rgb = tuple(int(255*x) for x in colorsys.hsv_to_rgb(0.45 - 0.12*t, 0.8, 0.95))
+        fill = f'rgb({rgb[0]},{rgb[1]},{rgb[2]})'
+        x = cx + i*spacing
+        y = cy + (math.sin(i * 0.8) * 18)
+        parts.append(f'<circle cx="{x}" cy="{y}" r="{r}" fill="{fill}" />')
+    # head
+    hx = cx + (length-1)*spacing + 12
+    hy = cy + (math.sin((length-1) * 0.8) * 18)
+    parts.append(f'<ellipse cx="{hx}" cy="{hy}" rx="{r+6}" ry="{r+2}" fill="rgb(255,214,90)" />')
+    # eye
+    parts.append(f'<circle cx="{hx+6}" cy="{hy-4}" r="3.2" fill="#111"/>')
+    parts.append('</svg>')
+    with open(filename, 'w') as f:
+        f.write("\\n".join(parts))
 
-- name: Commit generated snake
-run: |
-git config user.name "github-actions[bot]"
-git config user.email "github-actions[bot]@users.noreply.github.com"
-git add snake.svg || true
-git commit -m "chore: update snake" || echo "No changes to commit"
-git push || echo "Push failed — check permissions"
+def make_pacman_svg(background, filename, dot_color='#111'):
+    w, h = 900, 160
+    pac_x, pac_y, pac_r = 80, 80, 60
+    mouth_angle = math.radians(40)
+    def circle(cx, cy, r, fill):
+        return f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="{fill}" />\\n'
+    def polygon(points, fill):
+        pts = ' '.join(f\'{x},{y}\' for x,y in points)
+        return f'<polygon points="{pts}" fill="{fill}" />\\n'
+    svg = []
+    svg.append(f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}">')
+    svg.append(f'<rect width="100%" height="100%" fill="{background}"/>')
+    svg.append(circle(pac_x, pac_y, pac_r, '#FFD300'))
+    angle1 = -mouth_angle/2
+    angle2 = mouth_angle/2
+    p1 = (pac_x, pac_y)
+    p2 = (pac_x + pac_r * math.cos(angle1), pac_y + pac_r * math.sin(angle1))
+    p3 = (pac_x + pac_r * math.cos(angle2), pac_y + pac_r * math.sin(angle2))
+    svg.append(polygon([p1,p2,p3], background))
+    svg.append(circle(pac_x + 20, pac_y - 20, 6, '#111'))
+    dot_x = pac_x + pac_r + 24
+    for i in range(10):
+        svg.append(circle(dot_x + i*68, pac_y, 8, dot_color))
+    svg.append('</svg>')
+    with open(filename, 'w') as f:
+        f.write('\\n'.join(svg))
+
+def make_hero_svg(sn_filename, pac_filename, out_filename):
+    # read both svgs, strip their <?xml ...> if present, then embed via <g> transforms
+    with open(sn_filename,'r') as f:
+        sn = f.read()
+    with open(pac_filename,'r') as f:
+        pac = f.read()
+    # create a wrapper svg that places snake left and pacman right
+    W = 1100
+    H = 220
+    hero = []
+    hero.append(f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}">')
+    hero.append('<rect width="100%" height="100%" fill="transparent"/>')
+    # embed snake group (scale down if needed)
+    # wrap snake content inside a <g> with translate
+    # remove outer svg tag from sn and pac by finding the first '<svg' and closing '>'
+    def inner(svg_text):
+        start = svg_text.find('>')+1
+        end = svg_text.rfind('</svg>')
+        return svg_text[start:end] if start and end else svg_text
+    sn_inner = inner(sn)
+    pac_inner = inner(pac)
+    hero.append(f'<g transform="translate(0,12)">{sn_inner}</g>')
+    # shift pacman to the right
+    hero.append(f'<g transform="translate(520,20) scale(0.8)">{pac_inner}</g>')
+    hero.append('</svg>')
+    with open(out_filename,'w') as f:
+        f.write('\\n'.join(hero))
+
+# generate files
+make_snake_svg('output/snake.svg', length=14)
+make_pacman_svg('#ffffff', 'output/pacman-contribution-graph.svg', dot_color='#111')
+make_pacman_svg('#071017', 'output/pacman-contribution-graph-dark.svg', dot_color='#ffffff')
+make_hero_svg('output/snake.svg', 'output/pacman-contribution-graph.svg', 'output/hero.svg')
+print('Generated output/snake.svg, pacman SVGs and output/hero.svg')
+PY
+
+      - name: Commit generated svgs
+        uses: EndBug/add-and-commit@v9
+        with:
+          message: "chore: update visual svgs (snake, pacman, hero)"
+          add: 'output/*.svg'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
