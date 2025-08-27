@@ -2,13 +2,13 @@
 
 ###
 
-<img src="https://raw.githubusercontent.com/SysQall/SysQall/output/snake.svg" alt="Snake animation" />
+<p align="center"> <img src="./output/snake.svg" alt="Snake animation" /> </p>
+<div align="center">
 
+</div>
 ###
 
-<div align="center">
-  <img src="?theme=dark&spin=false&scan=false&rainbow=false" alt="Widget with the current Spotify song"  />
-</div>
+
 
 ###
 
