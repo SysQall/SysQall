@@ -1,84 +1,103 @@
-name: GitHub Pacman
-
+name: Generate Pacman & Hero
 
 on:
-schedule:
-- cron: '0 0 * * *' # runs daily at midnight UTC — change if needed
-workflow_dispatch: {}
-
+  schedule:
+    - cron: '0 1 * * *'  # daily at 01:00 UTC
+  workflow_dispatch: {}
 
 jobs:
-generate-pacman:
-runs-on: ubuntu-latest
+  generate:
+    runs-on: ubuntu-latest
 
+    steps:
+      - uses: actions/checkout@v4
 
-steps:
-- uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
 
+      - name: Ensure output dir
+        run: mkdir -p output
 
-- name: Generate pacman.svg
-run: |
-python3 - <<'PY' > pacman.svg
+      - name: Generate pacman and hero svgs
+        run: |
+          python3 - <<'PY'
 import math
+def make_pacman_svg(background, filename, dot_color='#ffffff'):
+    w, h = 900, 160
+    pac_x, pac_y, pac_r = 80, 80, 60
+    mouth_angle = math.radians(40)
+    def circle(cx, cy, r, fill):
+        return f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="{fill}" />\\n'
+    def polygon(points, fill):
+        pts = ' '.join(f\'{x},{y}\' for x,y in points)
+        return f'<polygon points="{pts}" fill="{fill}" />\\n'
+    svg = []
+    svg.append(f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}">')
+    svg.append(f'<rect width="100%" height="100%" fill="{background}"/>')
+    svg.append(circle(pac_x, pac_y, pac_r, '#FFD300'))
+    angle1 = -mouth_angle/2
+    angle2 = mouth_angle/2
+    p1 = (pac_x, pac_y)
+    p2 = (pac_x + pac_r * math.cos(angle1), pac_y + pac_r * math.sin(angle1))
+    p3 = (pac_x + pac_r * math.cos(angle2), pac_y + pac_r * math.sin(angle2))
+    svg.append(polygon([p1,p2,p3], background))
+    svg.append(circle(pac_x + 20, pac_y - 20, 6, '#111'))
+    dot_x = pac_x + pac_r + 24
+    for i in range(10):
+        svg.append(circle(dot_x + i*68, pac_y, 8, dot_color))
+    svg.append('</svg>')
+    with open(filename, 'w') as f:
+        f.write('\\n'.join(svg))
 
+def make_hero_from_sn_and_pac(sn='output/snake.svg', pac='output/pacman-contribution-graph.svg', out='output/hero.svg'):
+    try:
+        with open(sn,'r') as f: snc = f.read()
+        with open(pac,'r') as f: pacc = f.read()
+    except FileNotFoundError:
+        # if one missing, produce a hero that shows available asset(s)
+        content = []
+        content.append('<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="220" viewBox="0 0 1100 220">')
+        content.append('<rect width="100%" height="100%" fill="transparent"/>')
+        if 'snc' in locals():
+            start = snc.find('>')+1; end = snc.rfind('</svg>')
+            content.append(f'<g transform="translate(0,12)">{snc[start:end]}</g>')
+        if 'pacc' in locals():
+            start = pacc.find('>')+1; end = pacc.rfind('</svg>')
+            content.append(f'<g transform="translate(520,20) scale(0.8)">{pacc[start:end]}</g>')
+        content.append('</svg>')
+        with open(out,'w') as f:
+            f.write('\\n'.join(content))
+        return
+    def inner(svg_text):
+        start = svg_text.find('>')+1
+        end = svg_text.rfind('</svg>')
+        return svg_text[start:end] if start and end else svg_text
+    sn_inner = inner(snc)
+    pac_inner = inner(pacc)
+    hero = []
+    hero.append('<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="220" viewBox="0 0 1100 220">')
+    hero.append('<rect width="100%" height="100%" fill="transparent"/>')
+    hero.append(f'<g transform="translate(0,12)">{sn_inner}</g>')
+    hero.append(f'<g transform="translate(520,20) scale(0.8)">{pac_inner}</g>')
+    hero.append('</svg>')
+    with open(out,'w') as f:
+        f.write('\\n'.join(hero))
 
-w, h = 800, 160
-pac_x, pac_y, pac_r = 80, 80, 60
-mouth_angle = math.radians(40)
+# generate pacman svgs
+make_pacman_svg('#ffffff', 'output/pacman-contribution-graph.svg', dot_color='#111')
+make_pacman_svg('#071017', 'output/pacman-contribution-graph-dark.svg', dot_color='#ffffff')
 
-
-def circle(cx, cy, r, fill):
-return f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="{fill}" />
-'
-
-
-def polygon(points, fill):
-pts = ' '.join(f'{x},{y}' for x,y in points)
-return f'<polygon points="{pts}" fill="{fill}" />
-'
-
-
-# Pac-Man body (full circle) then mouth overlay to cut
-svg = []
-svg.append(f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}">')
-svg.append('<rect width="100%" height="100%" fill="#071017"/>')
-
-
-# Pac-Man (yellow circle)
-svg.append(circle(pac_x, pac_y, pac_r, '#FFD300'))
-
-
-# Mouth: overlay a triangle shaped polygon matching background to "cut" the mouth
-angle1 = -mouth_angle/2
-angle2 = mouth_angle/2
-p1 = (pac_x, pac_y)
-p2 = (pac_x + pac_r * math.cos(angle1), pac_y + pac_r * math.sin(angle1))
-p3 = (pac_x + pac_r * math.cos(angle2), pac_y + pac_r * math.sin(angle2))
-svg.append(polygon([p1,p2,p3], '#071017'))
-
-
-# Eye
-svg.append(circle(pac_x + 20, pac_y - 20, 6, '#111'))
-
-
-# Dots
-dot_x = pac_x + pac_r + 20
-for i in range(10):
-svg.append(circle(dot_x + i*60, pac_y, 10, '#ffffff'))
-
-
-svg.append('</svg>')
-
-
-print('
-'.join(svg))
+# (hero regeneration will include snake if present)
+make_hero_from_sn_and_pac()
+print('Generated pacman svgs and updated hero.svg')
 PY
 
-
-- name: Commit generated pacman
-run: |
-git config user.name "github-actions[bot]"
-git config user.email "github-actions[bot]@users.noreply.github.com"
-git add pacman.svg || true
-git commit -m "chore: update pacman.svg" || echo "No changes to commit"
-git push || echo "Push failed — check permissions"
+      - name: Commit generated svgs
+        uses: EndBug/add-and-commit@v9
+        with:
+          message: "chore: update pacman svgs and hero"
+          add: 'output/*.svg'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
