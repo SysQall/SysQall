@@ -1,140 +1,57 @@
-name: Generate Animated Hero (snake-run)
+name: Generate Snake + Pac-Man Hero
 
 on:
   schedule:
-    - cron: '0 0 * * *'  # daily at 00:00 UTC
-  workflow_dispatch: {}
+    - cron: "0 0 * * *"  # run daily at midnight UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
-  generate:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate Snake animation
+        uses: Platane/snk@v3
+        with:
+          github_user_name: SysQall
+          outputs: |
+            output/snake.svg
+            output/snake-dark.svg?palette=github-dark
 
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.x'
+          python-version: "3.x"
 
-      - name: Ensure output dir
-        run: mkdir -p output
-
-      - name: Generate animated svgs (snake + pacman + hero)
+      - name: Generate Pac-Man + Hero
         run: |
-          python3 - <<'PY'
-import math, colorsys
+          mkdir -p output
+          cat << 'EOF' > output/pacman.svg
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40">
+            <circle cx="20" cy="20" r="18" fill="yellow"/>
+            <polygon points="20,20 38,10 38,30" fill="black"/>
+            <circle cx="60" cy="20" r="4" fill="white"/>
+            <circle cx="75" cy="20" r="4" fill="white"/>
+            <circle cx="90" cy="20" r="4" fill="white"/>
+          </svg>
+          EOF
 
-# ---------- Helpers ----------
-def circle(cx,cy,r,fill, extra=''):
-    return f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="{fill}" {extra} />'
+          cat << 'EOF' > output/hero.svg
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 120">
+            <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle"
+                  font-size="28" font-family="monospace" fill="white">
+              Thiago Tomaz — Backend Apprentice ⚡
+            </text>
+          </svg>
+          EOF
 
-def polygon(points, fill, extra=''):
-    pts = ' '.join(f'{x},{y}' for x,y in points)
-    return f'<polygon points="{pts}" fill="{fill}" {extra} />'
-
-# ---------- Snake (animated bobbing) ----------
-def make_snake_svg(filename, length=14, cx=60, cy=90, spacing=34, r=14):
-    parts = []
-    w = cx + spacing * (length + 2)
-    h = 220
-    parts.append(f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}">')
-    parts.append('<rect width="100%" height="100%" fill="transparent"/>')
-    for i in range(length):
-        t = i / max(1, length-1)
-        rgb = tuple(int(255*x) for x in colorsys.hsv_to_rgb(0.45 - 0.12*t, 0.78, 0.96))
-        fill = f'rgb({rgb[0]},{rgb[1]},{rgb[2]})'
-        x = cx + i*spacing
-        y = cy
-        # each circle has a small vertical bobbing animation with staggered begin
-        anim = f'<animateTransform attributeName="transform" attributeType="XML" type="translate" dur="1.2s" repeatCount="indefinite" begin="{i*0.08}s" values="0 0; 0 -16; 0 0" />'
-        parts.append(f'<g transform="translate({x},{y})">{circle(0,0,r,fill)}{anim}</g>')
-    # head (bigger), with a slight forward/back motion
-    hx = cx + (length-1)*spacing + 16
-    hy = cy
-    parts.append(f'<g transform="translate({hx},{hy})">')
-    parts.append(f'<ellipse cx="0" cy="0" rx="{r+8}" ry="{r+4}" fill="rgb(255,214,90)"/>')
-    parts.append('<circle cx="6" cy="-4" r="3.2" fill="#111"/>')
-    # head translate to simulate slight forward motion
-    parts.append('<animateTransform attributeName="transform" attributeType="XML" type="translate" dur="0.9s" repeatCount="indefinite" values="0 0; 6 0; 0 0" />')
-    parts.append('</g>')
-    parts.append('</svg>')
-    with open(filename,'w') as f:
-        f.write("\\n".join(parts))
-
-# ---------- Pac-Man (animated mouth & moving dots) ----------
-def make_pacman_svg(background, filename, dot_color='#111'):
-    w, h = 900, 160
-    pac_x, pac_y, pac_r = 80, 80, 60
-    parts = []
-    parts.append(f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}">')
-    parts.append(f'<rect width="100%" height="100%" fill="{background}"/>')
-    # body
-    parts.append(f'<circle cx="{pac_x}" cy="{pac_y}" r="{pac_r}" fill="#FFD300" />')
-    # mouth wedge (animated rotate on a group)
-    # draw a wedge path that will be rotated to open/close
-    wedge = f'<path d="M {pac_x} {pac_y} L {pac_x + pac_r} {pac_y - pac_r} L {pac_x + pac_r} {pac_y + pac_r} Z" fill="{background}">'
-    wedge += f'<animateTransform attributeName="transform" attributeType="XML" type="rotate" dur="0.42s" repeatCount="indefinite" values="20 {pac_x} {pac_y}; -20 {pac_x} {pac_y}; 20 {pac_x} {pac_y}" /></path>'
-    parts.append(wedge)
-    # eye
-    parts.append(f'<circle cx="{pac_x + 20}" cy="{pac_y - 20}" r="6" fill="#111" />')
-    # dots that move leftwards to Pac-Man (looped)
-    dot_x = pac_x + pac_r + 24
-    dots = []
-    for i in range(10):
-        dx = dot_x + i*68
-        # each dot is a separate circle with a translate animation moving leftwards (loop)
-        anim = f'<animateTransform attributeName="transform" attributeType="XML" type="translate" dur="4s" repeatCount="indefinite" begin="{i*0.15}s" values="0 0; -520 0; 0 0" />'
-        dots.append(f'<g transform="translate({dx},{pac_y})">{circle(0,0,8,dot_color)}{anim}</g>')
-    parts.extend(dots)
-    parts.append('</svg>')
-    with open(filename,'w') as f:
-        f.write("\\n".join(parts))
-
-# ---------- Hero (compose both into a single svg with embedded animations preserved) ----------
-def make_hero_svg(sn_filename, pac_filename, out_filename):
-    try:
-        with open(sn_filename,'r') as f: sn = f.read()
-        with open(pac_filename,'r') as f: pac = f.read()
-    except FileNotFoundError:
-        # if one missing, write a simple placeholder hero
-        placeholder = []
-        placeholder.append('<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="220" viewBox="0 0 1100 220">')
-        placeholder.append('<rect width="100%" height="100%" fill="transparent"/>')
-        placeholder.append('<text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-size="18" fill="#777">Assets missing: hero will be generated when snake & pacman are available</text>')
-        placeholder.append('</svg>')
-        with open(out_filename,'w') as f:
-            f.write("\\n".join(placeholder))
-        return
-    # extract inner content of each svg (strip outer <svg...> .. </svg>)
-    def inner(svg_text):
-        start = svg_text.find('>') + 1
-        end = svg_text.rfind('</svg>')
-        return svg_text[start:end] if start and end else svg_text
-    sn_inner = inner(sn)
-    pac_inner = inner(pac)
-    hero = []
-    hero.append('<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="220" viewBox="0 0 1100 220">')
-    hero.append('<rect width="100%" height="100%" fill="transparent"/>')
-    # embed snake (left)
-    hero.append(f'<g transform="translate(0,8)">{sn_inner}</g>')
-    # embed pacman (right) scaled and shifted
-    hero.append(f'<g transform="translate(520,20) scale(0.95)">{pac_inner}</g>')
-    hero.append('</svg>')
-    with open(out_filename,'w') as f:
-        f.write("\\n".join(hero))
-
-# run generators
-make_snake_svg('output/snake.svg', length=14)
-make_pacman_svg('#ffffff', 'output/pacman-contribution-graph.svg', dot_color='#111')
-make_pacman_svg('#071017', 'output/pacman-contribution-graph-dark.svg', dot_color='#ffffff')
-make_hero_svg('output/snake.svg', 'output/pacman-contribution-graph.svg', 'output/hero.svg')
-print('Generated output/snake.svg, pacman svgs and output/hero.svg (animated)')
-PY
-
-      - name: Commit generated svgs
+      - name: Commit generated files
         uses: EndBug/add-and-commit@v9
         with:
-          message: "chore: update animated hero + svgs"
-          add: 'output/*.svg'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          add: "output/*"
+          message: "chore: update snake + pacman + hero svgs"
