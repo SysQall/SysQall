@@ -20,7 +20,7 @@ steps:
 uses: platane/snk@v4
 with:
 background: '10,10,10' # RGB or hex without '#'
-color: '0,200,120' # snake color
+color: '200,10,10' # snake color
 output: 'snake.svg'
 
 
