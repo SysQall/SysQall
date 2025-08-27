@@ -1,14 +1,13 @@
-name: Generate Snake & Hero
+name: Generate Animated Hero (snake-run)
 
 on:
   schedule:
-    - cron: '0 0 * * *'  # daily at midnight UTC
+    - cron: '0 0 * * *'  # daily at 00:00 UTC
   workflow_dispatch: {}
 
 jobs:
   generate:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
@@ -20,103 +19,122 @@ jobs:
       - name: Ensure output dir
         run: mkdir -p output
 
-      - name: Generate snake, pacman and hero svgs
+      - name: Generate animated svgs (snake + pacman + hero)
         run: |
           python3 - <<'PY'
 import math, colorsys
 
+# ---------- Helpers ----------
+def circle(cx,cy,r,fill, extra=''):
+    return f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="{fill}" {extra} />'
+
+def polygon(points, fill, extra=''):
+    pts = ' '.join(f'{x},{y}' for x,y in points)
+    return f'<polygon points="{pts}" fill="{fill}" {extra} />'
+
+# ---------- Snake (animated bobbing) ----------
 def make_snake_svg(filename, length=14, cx=60, cy=90, spacing=34, r=14):
     parts = []
     w = cx + spacing * (length + 2)
-    h = 200
+    h = 220
     parts.append(f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}">')
     parts.append('<rect width="100%" height="100%" fill="transparent"/>')
-    # gradient-ish colors
     for i in range(length):
         t = i / max(1, length-1)
-        # from green to teal
-        rgb = tuple(int(255*x) for x in colorsys.hsv_to_rgb(0.45 - 0.12*t, 0.8, 0.95))
+        rgb = tuple(int(255*x) for x in colorsys.hsv_to_rgb(0.45 - 0.12*t, 0.78, 0.96))
         fill = f'rgb({rgb[0]},{rgb[1]},{rgb[2]})'
         x = cx + i*spacing
-        y = cy + (math.sin(i * 0.8) * 18)
-        parts.append(f'<circle cx="{x}" cy="{y}" r="{r}" fill="{fill}" />')
-    # head
-    hx = cx + (length-1)*spacing + 12
-    hy = cy + (math.sin((length-1) * 0.8) * 18)
-    parts.append(f'<ellipse cx="{hx}" cy="{hy}" rx="{r+6}" ry="{r+2}" fill="rgb(255,214,90)" />')
-    # eye
-    parts.append(f'<circle cx="{hx+6}" cy="{hy-4}" r="3.2" fill="#111"/>')
+        y = cy
+        # each circle has a small vertical bobbing animation with staggered begin
+        anim = f'<animateTransform attributeName="transform" attributeType="XML" type="translate" dur="1.2s" repeatCount="indefinite" begin="{i*0.08}s" values="0 0; 0 -16; 0 0" />'
+        parts.append(f'<g transform="translate({x},{y})">{circle(0,0,r,fill)}{anim}</g>')
+    # head (bigger), with a slight forward/back motion
+    hx = cx + (length-1)*spacing + 16
+    hy = cy
+    parts.append(f'<g transform="translate({hx},{hy})">')
+    parts.append(f'<ellipse cx="0" cy="0" rx="{r+8}" ry="{r+4}" fill="rgb(255,214,90)"/>')
+    parts.append('<circle cx="6" cy="-4" r="3.2" fill="#111"/>')
+    # head translate to simulate slight forward motion
+    parts.append('<animateTransform attributeName="transform" attributeType="XML" type="translate" dur="0.9s" repeatCount="indefinite" values="0 0; 6 0; 0 0" />')
+    parts.append('</g>')
     parts.append('</svg>')
-    with open(filename, 'w') as f:
+    with open(filename,'w') as f:
         f.write("\\n".join(parts))
 
+# ---------- Pac-Man (animated mouth & moving dots) ----------
 def make_pacman_svg(background, filename, dot_color='#111'):
     w, h = 900, 160
     pac_x, pac_y, pac_r = 80, 80, 60
-    mouth_angle = math.radians(40)
-    def circle(cx, cy, r, fill):
-        return f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="{fill}" />\\n'
-    def polygon(points, fill):
-        pts = ' '.join(f\'{x},{y}\' for x,y in points)
-        return f'<polygon points="{pts}" fill="{fill}" />\\n'
-    svg = []
-    svg.append(f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}">')
-    svg.append(f'<rect width="100%" height="100%" fill="{background}"/>')
-    svg.append(circle(pac_x, pac_y, pac_r, '#FFD300'))
-    angle1 = -mouth_angle/2
-    angle2 = mouth_angle/2
-    p1 = (pac_x, pac_y)
-    p2 = (pac_x + pac_r * math.cos(angle1), pac_y + pac_r * math.sin(angle1))
-    p3 = (pac_x + pac_r * math.cos(angle2), pac_y + pac_r * math.sin(angle2))
-    svg.append(polygon([p1,p2,p3], background))
-    svg.append(circle(pac_x + 20, pac_y - 20, 6, '#111'))
+    parts = []
+    parts.append(f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}">')
+    parts.append(f'<rect width="100%" height="100%" fill="{background}"/>')
+    # body
+    parts.append(f'<circle cx="{pac_x}" cy="{pac_y}" r="{pac_r}" fill="#FFD300" />')
+    # mouth wedge (animated rotate on a group)
+    # draw a wedge path that will be rotated to open/close
+    wedge = f'<path d="M {pac_x} {pac_y} L {pac_x + pac_r} {pac_y - pac_r} L {pac_x + pac_r} {pac_y + pac_r} Z" fill="{background}">'
+    wedge += f'<animateTransform attributeName="transform" attributeType="XML" type="rotate" dur="0.42s" repeatCount="indefinite" values="20 {pac_x} {pac_y}; -20 {pac_x} {pac_y}; 20 {pac_x} {pac_y}" /></path>'
+    parts.append(wedge)
+    # eye
+    parts.append(f'<circle cx="{pac_x + 20}" cy="{pac_y - 20}" r="6" fill="#111" />')
+    # dots that move leftwards to Pac-Man (looped)
     dot_x = pac_x + pac_r + 24
+    dots = []
     for i in range(10):
-        svg.append(circle(dot_x + i*68, pac_y, 8, dot_color))
-    svg.append('</svg>')
-    with open(filename, 'w') as f:
-        f.write('\\n'.join(svg))
+        dx = dot_x + i*68
+        # each dot is a separate circle with a translate animation moving leftwards (loop)
+        anim = f'<animateTransform attributeName="transform" attributeType="XML" type="translate" dur="4s" repeatCount="indefinite" begin="{i*0.15}s" values="0 0; -520 0; 0 0" />'
+        dots.append(f'<g transform="translate({dx},{pac_y})">{circle(0,0,8,dot_color)}{anim}</g>')
+    parts.extend(dots)
+    parts.append('</svg>')
+    with open(filename,'w') as f:
+        f.write("\\n".join(parts))
 
+# ---------- Hero (compose both into a single svg with embedded animations preserved) ----------
 def make_hero_svg(sn_filename, pac_filename, out_filename):
-    # read both svgs, strip their <?xml ...> if present, then embed via <g> transforms
-    with open(sn_filename,'r') as f:
-        sn = f.read()
-    with open(pac_filename,'r') as f:
-        pac = f.read()
-    # create a wrapper svg that places snake left and pacman right
-    W = 1100
-    H = 220
-    hero = []
-    hero.append(f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}">')
-    hero.append('<rect width="100%" height="100%" fill="transparent"/>')
-    # embed snake group (scale down if needed)
-    # wrap snake content inside a <g> with translate
-    # remove outer svg tag from sn and pac by finding the first '<svg' and closing '>'
+    try:
+        with open(sn_filename,'r') as f: sn = f.read()
+        with open(pac_filename,'r') as f: pac = f.read()
+    except FileNotFoundError:
+        # if one missing, write a simple placeholder hero
+        placeholder = []
+        placeholder.append('<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="220" viewBox="0 0 1100 220">')
+        placeholder.append('<rect width="100%" height="100%" fill="transparent"/>')
+        placeholder.append('<text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-size="18" fill="#777">Assets missing: hero will be generated when snake & pacman are available</text>')
+        placeholder.append('</svg>')
+        with open(out_filename,'w') as f:
+            f.write("\\n".join(placeholder))
+        return
+    # extract inner content of each svg (strip outer <svg...> .. </svg>)
     def inner(svg_text):
-        start = svg_text.find('>')+1
+        start = svg_text.find('>') + 1
         end = svg_text.rfind('</svg>')
         return svg_text[start:end] if start and end else svg_text
     sn_inner = inner(sn)
     pac_inner = inner(pac)
-    hero.append(f'<g transform="translate(0,12)">{sn_inner}</g>')
-    # shift pacman to the right
-    hero.append(f'<g transform="translate(520,20) scale(0.8)">{pac_inner}</g>')
+    hero = []
+    hero.append('<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="220" viewBox="0 0 1100 220">')
+    hero.append('<rect width="100%" height="100%" fill="transparent"/>')
+    # embed snake (left)
+    hero.append(f'<g transform="translate(0,8)">{sn_inner}</g>')
+    # embed pacman (right) scaled and shifted
+    hero.append(f'<g transform="translate(520,20) scale(0.95)">{pac_inner}</g>')
     hero.append('</svg>')
     with open(out_filename,'w') as f:
-        f.write('\\n'.join(hero))
+        f.write("\\n".join(hero))
 
-# generate files
+# run generators
 make_snake_svg('output/snake.svg', length=14)
 make_pacman_svg('#ffffff', 'output/pacman-contribution-graph.svg', dot_color='#111')
 make_pacman_svg('#071017', 'output/pacman-contribution-graph-dark.svg', dot_color='#ffffff')
 make_hero_svg('output/snake.svg', 'output/pacman-contribution-graph.svg', 'output/hero.svg')
-print('Generated output/snake.svg, pacman SVGs and output/hero.svg')
+print('Generated output/snake.svg, pacman svgs and output/hero.svg (animated)')
 PY
 
       - name: Commit generated svgs
         uses: EndBug/add-and-commit@v9
         with:
-          message: "chore: update visual svgs (snake, pacman, hero)"
+          message: "chore: update animated hero + svgs"
           add: 'output/*.svg'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
